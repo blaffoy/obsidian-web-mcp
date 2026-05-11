@@ -4,6 +4,7 @@ Exposes read/write access to an Obsidian vault over Streamable HTTP.
 Designed to run behind Cloudflare Tunnel for secure remote access.
 """
 
+import atexit
 import json
 import logging
 import sys
@@ -17,19 +18,23 @@ from .frontmatter_index import FrontmatterIndex
 
 logger = logging.getLogger(__name__)
 
-# Global frontmatter index instance
+# Global frontmatter index instance. Lifecycle is managed in main() rather
+# than in `lifespan` below: with stateless_http=True the MCP session manager
+# enters the lifespan once per request, so anything started there would
+# accumulate. The index holds a watchdog Observer (an inotify instance),
+# which is a per-user kernel resource with a low default cap.
 frontmatter_index = FrontmatterIndex()
 
 
 @asynccontextmanager
 async def lifespan(server):
-    """Start frontmatter index on server startup, stop on shutdown."""
-    logger.info(f"Starting vault MCP server. Vault: {VAULT_PATH}")
-    frontmatter_index.start()
-    logger.info(f"Frontmatter index built: {frontmatter_index.file_count} files indexed")
+    """Per-session lifespan. Exposes the (already-started, process-scoped)
+    frontmatter index to request handlers via lifespan_context.
+
+    Do NOT start expensive or kernel-resource-holding objects here:
+    stateless_http=True causes this to run once per request.
+    """
     yield {"frontmatter_index": frontmatter_index}
-    frontmatter_index.stop()
-    logger.info("Vault MCP server shut down.")
 
 
 # Create the MCP server
@@ -201,6 +206,11 @@ def main():
 
     if not VAULT_MCP_TOKEN:
         logger.warning("VAULT_MCP_TOKEN is not set -- auth will reject all requests")
+
+    logger.info(f"Starting vault MCP server. Vault: {VAULT_PATH}")
+    frontmatter_index.start()
+    logger.info(f"Frontmatter index built: {frontmatter_index.file_count} files indexed")
+    atexit.register(frontmatter_index.stop)
 
     # Build the Starlette app with auth middleware and OAuth endpoints
     try:

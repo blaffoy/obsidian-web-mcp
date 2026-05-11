@@ -25,7 +25,16 @@ class FrontmatterIndex:
         self._pending_paths: set[str] = set()
 
     def start(self) -> None:
-        """Walk all .md files, parse frontmatter, and start watching for changes."""
+        """Walk all .md files, parse frontmatter, and start watching for changes.
+
+        Idempotent: subsequent calls are no-ops. Each Observer holds a kernel
+        inotify instance (capped per-user at fs.inotify.max_user_instances,
+        default 128 on Linux), so accidentally starting many of them exhausts
+        the cap quickly.
+        """
+        if self._observer is not None:
+            return
+
         t0 = time.monotonic()
         count = 0
 
@@ -43,10 +52,13 @@ class FrontmatterIndex:
             "Frontmatter index built: %d files in %.2f seconds", count, elapsed
         )
 
-        self._observer = Observer()
+        observer = Observer()
         handler = _VaultEventHandler(self)
-        self._observer.schedule(handler, str(config.VAULT_PATH), recursive=True)
-        self._observer.start()
+        observer.schedule(handler, str(config.VAULT_PATH), recursive=True)
+        observer.start()
+        # Assign last so a concurrent start() caller sees either None
+        # (and waits at the guard above) or a fully-initialised observer.
+        self._observer = observer
 
     def stop(self) -> None:
         """Stop the filesystem observer and cancel any pending debounce."""
