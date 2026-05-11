@@ -49,6 +49,7 @@ mcp = FastMCP(
             "127.0.0.1:*",
             "localhost:*",
             "[::1]:*",
+            "laffoy-dev-server.tail8135c6.ts.net",
             # Add your tunnel hostname here, e.g.:
             # "vault-mcp.example.com",
         ],
