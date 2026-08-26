@@ -55,6 +55,21 @@ async def oauth_metadata(request: Request) -> JSONResponse:
     })
 
 
+async def oauth_protected_resource_metadata(request: Request) -> JSONResponse:
+    """RFC 9728 OAuth protected resource metadata.
+
+    MCP clients fetch this first (from the resource URL, e.g. /mcp) to
+    discover which authorization server protects this resource, before
+    ever calling /oauth/register.
+    """
+    base_url = str(request.base_url).rstrip("/")
+    return JSONResponse({
+        "resource": f"{base_url}/mcp",
+        "authorization_servers": [base_url],
+        "bearer_methods_supported": ["header"],
+    })
+
+
 async def oauth_authorize(request: Request):
     """OAuth 2.0 authorization endpoint.
 
@@ -209,6 +224,8 @@ async def oauth_register(request: Request) -> JSONResponse:
 # Starlette routes to mount on the app
 oauth_routes = [
     Route("/.well-known/oauth-authorization-server", oauth_metadata, methods=["GET"]),
+    Route("/.well-known/oauth-protected-resource", oauth_protected_resource_metadata, methods=["GET"]),
+    Route("/.well-known/oauth-protected-resource/mcp", oauth_protected_resource_metadata, methods=["GET"]),
     Route("/oauth/authorize", oauth_authorize, methods=["GET"]),
     Route("/oauth/token", oauth_token, methods=["POST"]),
     Route("/oauth/register", oauth_register, methods=["POST"]),
